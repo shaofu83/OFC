@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OFC單店鮮食輔導診斷</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- PapaParse CDN for robust CSV Parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+    <style>
+        body {
+            font-family: "Microsoft JhengHei", "微軟正黑體", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: #f4f6f8;
+            color: #1f2937;
+        }
+
+        /* 7-ELEVEN Brand Accent Border Line */
+        .brand-border-top {
+            border-top: 5px solid #00833e; /* Green */
+            position: relative;
+        }
+        .brand-border-top::before {
+            content: "";
+            position: absolute;
+            top: -5px;
+            left: 0;
+            width: 33.33%;
+            height: 5px;
+            background-color: #f58220; /* Orange */
+        }
+        .brand-border-top::after {
+            content: "";
+            position: absolute;
+            top: -5px;
+            right: 0;
+            width: 33.33%;
+            height: 5px;
+            background-color: #e2231a; /* Red */
+        }
+
+        /* Bold red highlighting for elimination recommendations */
+        .row-eliminated {
+            color: #dc2626 !important;
+            font-weight: 700 !important;
+            background-color: #fef2f2 !important;
+        }
+
+        /* Sortable column cursor */
+        th.sortable {
+            cursor: pointer;
+            user-select: none;
+        }
+        th.sortable:hover {
+            background-color: #e5e7eb;
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col bg-slate-100">
+
+    <!-- Header Component (Pure Text Title in Microsoft JhengHei) -->
+    <header class="bg-white shadow-md brand-border-top sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-wrap justify-between items-center gap-4">
+            <div>
+                <h1 class="text-2xl sm:text-3xl font-bold text-gray-800 tracking-tight flex items-center gap-3">
+                    <span>OFC單店鮮食輔導診斷</span>
+                    <span class="text-xs bg-red-100 text-red-600 font-semibold px-2.5 py-1 rounded-full border border-red-200">v3.5 正式版</span>
+                </h1>
+                <p class="text-xs text-gray-500 mt-0.5">單店鮮食檯帳分析與 SKU 淘汰輔導系統</p>
+            </div>
+
+            <div class="flex items-center space-x-2 sm:space-x-3">
+                <button id="btnDemoData" onclick="loadDemoData()" class="px-3.5 py-2 text-xs sm:text-sm bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-lg border border-emerald-200 transition flex items-center gap-1.5 shadow-sm">
+                    <i class="fa-solid fa-wand-magic-sparkles text-amber-500"></i>
+                    <span>載入測試範例數據</span>
+                </button>
+                <button id="btnReset" onclick="resetAllData()" class="px-3.5 py-2 text-xs sm:text-sm bg-gray-100 hover:bg-red-50 text-gray-600 hover:text-red-600 font-medium rounded-lg transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-rotate-right"></i>
+                    <span>重置</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full space-y-6">
+
+        <!-- Step 1: File Upload Panel -->
+        <section class="bg-white rounded-xl shadow-sm border border-gray-200 p-5 sm:p-6 transition-all hover:shadow-md">
+            <div class="flex items-center justify-between mb-4 pb-2 border-b border-gray-100">
+                <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                    <span class="flex items-center justify-center w-7 h-7 bg-emerald-100 text-emerald-800 font-extrabold rounded-full text-sm">1</span>
+                    上傳診斷報表 (CSV)
+                </h2>
+                <span class="text-xs text-gray-500"><i class="fa-solid fa-circle-info text-blue-500 mr-1"></i>自動解析 D 欄品號與完整商品名稱，精準過濾非檯帳</span>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- File 1: Sales Data CSV -->
+                <div class="border-2 border-dashed border-gray-300 rounded-xl p-5 text-center hover:border-emerald-500 transition-colors bg-gray-50/50 relative group">
+                    <input type="file" id="fileSales" accept=".csv" onchange="handleFileUpload('sales', event)" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                    <div id="statusSales" class="space-y-2">
+                        <div class="w-12 h-12 mx-auto bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                            <i class="fa-solid fa-file-invoice-dollar text-xl"></i>
+                        </div>
+                        <p class="font-bold text-sm text-gray-700">檔案 1：門市銷售狀況報表</p>
+                        <p class="text-xs text-gray-400">請拖曳或選擇 CSV 檔案 (含 D欄:商品代號名稱)</p>
+                        <span id="badgeSales" class="inline-block px-2.5 py-0.5 text-xs font-semibold rounded-full bg-gray-200 text-gray-600">尚未選擇檔案</span>
+                    </div>
+                </div>
+
+                <!-- File 2: Introduction Data CSV -->
+                <div class="border-2 border-dashed border-gray-300 rounded-xl p-5 text-center hover:border-orange-500 transition-colors bg-gray-50/50 relative group">
+                    <input type="file" id="fileIntro" accept=".csv" onchange="handleFileUpload('intro', event)" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                    <div id="statusIntro" class="space-y-2">
+                        <div class="w-12 h-12 mx-auto bg-orange-50 text-orange-600 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                            <i class="fa-solid fa-boxes-packing text-xl"></i>
+                        </div>
+                        <p class="font-bold text-sm text-gray-700">檔案 2：門市檯帳導入率報表</p>
+                        <p class="text-xs text-gray-400">請拖曳或選擇 CSV 檔案 (含 檯帳導入率欄位)</p>
+                        <span id="badgeIntro" class="inline-block px-2.5 py-0.5 text-xs font-semibold rounded-full bg-gray-200 text-gray-600">尚未選擇檔案</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Start Diagnosis Button -->
+            <div class="mt-6 flex justify-center">
+                <button id="btnRunDiagnosis" onclick="runDiagnosis()" disabled class="w-full sm:w-auto px-8 py-3 bg-gray-300 cursor-not-allowed text-white font-bold rounded-xl shadow transition flex items-center justify-center gap-2 text-base">
+                    <i class="fa-solid fa-chart-line"></i>
+                    <span>開始進行數據診斷與分析</span>
+                </button>
+            </div>
+        </section>
+
+        <!-- Step 2: Dashboard Metrics Summary -->
+        <section id="sectionDashboard" class="hidden space-y-6">
+            <!-- Store & PMA Category Banner -->
+            <div class="bg-gradient-to-r from-emerald-800 to-teal-900 rounded-xl p-5 text-white shadow-md flex flex-wrap justify-between items-center gap-4">
+                <div class="flex items-center gap-3">
+                    <div class="p-3 bg-white/10 rounded-lg backdrop-blur-sm">
+                        <i class="fa-solid fa-store text-2xl text-amber-400"></i>
+                    </div>
+                    <div>
+                        <div class="text-xs text-emerald-200 font-medium uppercase tracking-wider">診斷目標門市</div>
+                        <div id="displayStoreName" class="text-xl font-bold tracking-wide">-- 門市</div>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-6">
+                    <div class="text-right">
+                        <div class="text-xs text-emerald-200 font-medium">鮮食 PMA 類別</div>
+                        <div id="displayCategory" class="text-lg font-bold text-amber-300">鮮食全品項</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-xs text-emerald-200 font-medium">分析筆數 (已排除非檯帳)</div>
+                        <div id="displayTotalSKU" class="text-lg font-bold">0 品項</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Key Metric Cards -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-200 flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold text-gray-500 uppercase">檯帳在售 (已導入)</p>
+                        <h3 id="cardActiveSKU" class="text-2xl font-black text-gray-800 mt-1">0</h3>
+                        <p class="text-xs text-emerald-600 mt-1 font-medium"><i class="fa-solid fa-check-circle"></i> 導入率 100%</p>
+                    </div>
+                    <div class="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center text-xl font-bold">
+                        <i class="fa-solid fa-box-archive"></i>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-200 flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold text-gray-500 uppercase">未導入 (0% 檯帳)</p>
+                        <h3 id="cardUnintroSKU" class="text-2xl font-black text-gray-800 mt-1">0</h3>
+                        <p class="text-xs text-amber-600 mt-1 font-medium"><i class="fa-solid fa-triangle-exclamation"></i> 建議引進/補上</p>
+                    </div>
+                    <div class="w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center text-xl font-bold">
+                        <i class="fa-solid fa-eye-slash"></i>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-200 flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold text-gray-500 uppercase">非檯帳 (已自動排除)</p>
+                        <h3 id="cardFilteredSKU" class="text-2xl font-black text-gray-400 mt-1">0</h3>
+                        <p class="text-xs text-gray-400 mt-1 font-medium"><i class="fa-solid fa-filter"></i> 導入率空白不診斷</p>
+                    </div>
+                    <div class="w-12 h-12 bg-gray-100 text-gray-500 rounded-xl flex items-center justify-center text-xl font-bold">
+                        <i class="fa-solid fa-filter-circle-xmark"></i>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl p-5 shadow-sm border border-red-200 bg-red-50/30 flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-semibold text-red-600 uppercase">建議 淘汰 / 刪除 / 下架</p>
+                        <h3 id="cardEliminateSKU" class="text-2xl font-black text-red-600 mt-1">0</h3>
+                        <p class="text-xs text-red-500 mt-1 font-bold"><i class="fa-solid fa-circle-exclamation"></i> 優先門市現場調整</p>
+                    </div>
+                    <div class="w-12 h-12 bg-red-100 text-red-600 rounded-xl flex items-center justify-center text-xl font-bold">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Step 3: Diagnostic Data Table Section -->
+        <section id="sectionTable" class="hidden bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <!-- Table Controls Header -->
+            <div class="p-5 border-b border-gray-200 flex flex-wrap justify-between items-center gap-4 bg-gray-50">
+                <div class="flex items-center gap-3">
+                    <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                        <span class="flex items-center justify-center w-7 h-7 bg-emerald-100 text-emerald-800 font-extrabold rounded-full text-sm">2</span>
+                        鮮食 SKU 診斷建議明細
+                    </h2>
+                    <span id="labelResultCount" class="text-xs bg-gray-200 text-gray-700 px-2.5 py-1 rounded-full font-semibold">共 0 筆</span>
+                </div>
+
+                <!-- Filters & CSV Export -->
+                <div class="flex flex-wrap items-center gap-3">
+                    <!-- Search Input -->
+                    <div class="relative">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+                        <input type="text" id="inputSearch" oninput="applyFilters()" placeholder="搜尋品號或商品名稱..." class="pl-8 pr-3 py-1.5 text-xs sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none w-48 sm:w-64">
+                    </div>
+
+                    <!-- Filter Dropdown -->
+                    <select id="selectRecFilter" onchange="applyFilters()" class="py-1.5 px-3 text-xs sm:text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white font-medium">
+                        <option value="ALL">所有建議狀態</option>
+                        <option value="ELIMINATE">僅顯示「淘汰 / 刪除 / 下架」</option>
+                        <option value="KEEP">僅顯示「維持 / 觀察」</option>
+                        <option value="INTRO">僅顯示「建議引進 / 補上檯帳」</option>
+                    </select>
+
+                    <!-- CSV Export Button -->
+                    <button onclick="exportCSV()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-sm transition text-xs sm:text-sm flex items-center gap-2">
+                        <i class="fa-solid fa-file-excel"></i>
+                        <span>匯出 CSV (UTF-8 BOM)</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Dynamic Table Container -->
+            <div class="overflow-x-auto max-h-[600px]">
+                <table class="w-full text-left border-collapse text-sm">
+                    <thead class="bg-gray-100 text-gray-700 font-bold sticky top-0 z-10 border-b border-gray-200">
+                        <tr>
+                            <th onclick="sortTable('sku')" class="sortable px-4 py-3 min-w-[100px]">
+                                <div class="flex items-center gap-1">品號 <i class="fa-solid fa-sort text-xs text-gray-400"></i></div>
+                            </th>
+                            <th onclick="sortTable('name')" class="sortable px-4 py-3 min-w-[240px]">
+                                <div class="flex items-center gap-1">商品名稱 <i class="fa-solid fa-sort text-xs text-gray-400"></i></div>
+                            </th>
+                            <th onclick="sortTable('introRate')" class="sortable px-4 py-3 min-w-[110px] text-center">
+                                <div class="flex items-center justify-center gap-1">檯帳狀態 <i class="fa-solid fa-sort text-xs text-gray-400"></i></div>
+                            </th>
+                            <th onclick="sortTable('salesQty')" class="sortable px-4 py-3 min-w-[100px] text-right">
+                                <div class="flex items-center justify-end gap-1">銷售數量 <i class="fa-solid fa-sort text-xs text-gray-400"></i></div>
+                            </th>
+                            <th onclick="sortTable('salesAmount')" class="sortable px-4 py-3 min-w-[110px] text-right">
+                                <div class="flex items-center justify-end gap-1">銷售金額 <i class="fa-solid fa-sort text-xs text-gray-400"></i></div>
+                            </th>
+                            <th onclick="sortTable('wasteQty')" class="sortable px-4 py-3 min-w-[100px] text-right">
+                                <div class="flex items-center justify-end gap-1">廢棄數量 <i class="fa-solid fa-sort text-xs text-gray-400"></i></div>
+                            </th>
+                            <th onclick="sortTable('recommendation')" class="sortable px-4 py-3 min-w-[180px]">
+                                <div class="flex items-center gap-1">輔導診斷建議 <i class="fa-solid fa-sort text-xs text-gray-400"></i></div>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody" class="divide-y divide-gray-200 font-medium">
+                        <!-- Dynamic Rows Injected Here -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Table Footer -->
+            <div class="px-5 py-3 bg-gray-50 border-t border-gray-200 text-xs text-gray-500 flex justify-between items-center">
+                <div>註：標示為「非檯帳」（空白導入率）之項目已自動由系統過濾移除。</div>
+                <div id="tableTotalSummary" class="font-bold text-gray-700">--</div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Toast Notification Banner -->
+    <div id="toast" class="fixed bottom-5 right-5 z-50 transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none">
+        <div id="toastContent" class="bg-gray-900 text-white px-5 py-3.5 rounded-xl shadow-2xl flex items-center gap-3 border border-gray-700">
+            <i id="toastIcon" class="fa-solid fa-circle-check text-emerald-400 text-lg"></i>
+            <div>
+                <div id="toastTitle" class="font-bold text-sm">通知標題</div>
+                <div id="toastMessage" class="text-xs text-gray-300">通知詳細說明內文</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global State Variables
+        let salesRawData = null;
+        let introRawData = null;
+        let processedData = []; // Processed & normalized SKU dataset
+        let filteredData = [];  // Current view dataset after filtering & sorting
+        
+        let currentStoreName = "忠孝東門店";
+        let currentCategory = "鮮食類";
+        let sortColumn = "salesAmount";
+        let sortAsc = false;
+
+        /**
+         * Show Toast Notification Box
+         */
+        function showToast(title, message, type = 'success') {
+            const toast = document.getElementById('toast');
+            const toastTitle = document.getElementById('toastTitle');
+            const toastMessage = document.getElementById('toastMessage');
+            const toastIcon = document.getElementById('toastIcon');
+
+            toastTitle.innerText = title;
+            toastMessage.innerText = message;
+
+            if (type === 'success') {
+                toastIcon.className = "fa-solid fa-circle-check text-emerald-400 text-lg";
+            } else if (type === 'warning') {
+                toastIcon.className = "fa-solid fa-triangle-exclamation text-amber-400 text-lg";
+            } else if (type === 'error') {
+                toastIcon.className = "fa-solid fa-circle-xmark text-red-400 text-lg";
+            } else {
+                toastIcon.className = "fa-solid fa-circle-info text-blue-400 text-lg";
+            }
+
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            toast.classList.add('translate-y-0', 'opacity-100');
+
+            setTimeout(() => {
+                toast.classList.remove('translate-y-0', 'opacity-100');
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3500);
+        }
+
+        /**
+         * Handle File Upload & Parse CSV
+         */
+        function handleFileUpload(type, event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    if (type === 'sales') {
+                        salesRawData = results.data;
+                        document.getElementById('badgeSales').className = "inline-block px-2.5 py-0.5 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-800";
+                        document.getElementById('badgeSales').innerText = `已載入 ${results.data.length} 筆數據`;
+                        showToast("上傳成功", `已讀取門市銷售狀況報表 (${file.name})`, "success");
+                    } else if (type === 'intro') {
+                        introRawData = results.data;
+                        document.getElementById('badgeIntro').className = "inline-block px-2.5 py-0.5 text-xs font-semibold rounded-full bg-orange-100 text-orange-800";
+                        document.getElementById('badgeIntro').innerText = `已載入 ${results.data.length} 筆數據`;
+                        showToast("上傳成功", `已讀取檯帳導入率報表 (${file.name})`, "success");
+                    }
+
+                    checkDataReady();
+                },
+                error: function(err) {
+                    showToast("檔案讀取失敗", err.message, "error");
+                }
+            });
+        }
+
+        /**
+         * Enable Diagnostic Button when sales data is ready
+         */
+        function checkDataReady() {
+            const btn = document.getElementById('btnRunDiagnosis');
+            if (salesRawData && salesRawData.length > 0) {
+                btn.disabled = false;
+                btn.className = "w-full sm:w-auto px-8 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-lg hover:shadow-emerald-200 transition flex items-center justify-center gap-2 text-base cursor-pointer transform hover:-translate-y-0.5";
+            }
+        }
+
+        /**
+         * Load Predefined Demo Dataset
+         */
+        function loadDemoData() {
+            currentStoreName = "重慶門市";
+            currentCategory = "18度鮮食";
+
+            // Mock Sales Data (File 1)
+            salesRawData = [
+                { "門市名稱": "重慶門市", "PMA類別": "18度鮮食", "D": "104921:新極大肉鬆飯糰", "銷售數量": "142", "銷售金額": "5680", "廢棄數量": "2" },
+                { "門市名稱": "重慶門市", "PMA類別": "18度鮮食", "D": "108342:爪哇咖哩飯", "銷售數量": "98", "銷售金額": "8820", "廢棄數量": "5" },
+                { "門市名稱": "重慶門市", "PMA類別": "18度鮮食", "D": "101294:阜杭豆漿經典飯糰", "銷售數量": "120", "銷售金額": "6000", "廢棄數量": "1" },
+                { "門市名稱": "重慶門市", "PMA類別": "18度鮮食", "D": "105581:皮蛋瘦肉粥", "銷售數量": "12", "銷售金額": "780", "廢棄數量": "18" },  // High waste / Low sales -> Eliminate
+                { "門市名稱": "重慶門市", "PMA類別": "18度鮮食", "D": "102834:紐奧良風味雞腿三明治", "銷售數量": "85", "銷售金額": "4250", "廢棄數量": "3" },
+                { "門市名稱": "重慶門市", "PMA類別": "18度鮮食", "D": "109923:青醬雞肉義大利麵", "銷售數量": "8", "銷售金額": "712", "廢棄數量": "14" },   // Eliminate
+                { "門市名稱": "重慶門市", "PMA類別": "18度鮮食", "D": "103774:石安牧場溏心蛋三明治", "銷售數量": "110", "銷售金額": "5490", "廢棄數量": "0" },
+                { "門市名稱": "重慶門市", "PMA類別": "18度鮮食", "D": "106421:雙拼韓式燒肉便當", "銷售數量": "4", "銷售金額": "396", "廢棄數量": "12" },   // Eliminate
+                { "門市名稱": "重慶門市", "PMA類別": "18度鮮食", "D": "107112:日式豚骨拉麵", "銷售數量": "0", "銷售金額": "0", "廢棄數量": "0" },      // Unintroduced (0%)
+                { "門市名稱": "重慶門市", "PMA類別": "18度鮮食", "D": "108841:舊版季節限定便當", "銷售數量": "0", "銷售金額": "0", "廢棄數量": "0" }       // Blank intro rate -> Non-planogram (Filtered)
+            ];
+
+            // Mock Intro Data (File 2)
+            introRawData = [
+                { "品號": "104921", "檯帳導入率": "100%" },
+                { "品號": "108342", "檯帳導入率": "100%" },
+                { "品號": "101294", "檯帳導入率": "100%" },
+                { "品號": "105581", "檯帳導入率": "100%" },
+                { "品號": "102834", "檯帳導入率": "100%" },
+                { "品號": "109923", "檯帳導入率": "100%" },
+                { "品號": "103774", "檯帳導入率": "100%" },
+                { "品號": "106421", "檯帳導入率": "100%" },
+                { "品號": "107112", "檯帳導入率": "0%" },
+                { "品號": "108841", "檯帳導入率": "" } // Null/Blank -> Non-planogram
+            ];
+
+            document.getElementById('badgeSales').className = "inline-block px-2.5 py-0.5 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-800";
+            document.getElementById('badgeSales').innerText = `已載入 10 筆測試資料`;
+            document.getElementById('badgeIntro').className = "inline-block px-2.5 py-0.5 text-xs font-semibold rounded-full bg-orange-100 text-orange-800";
+            document.getElementById('badgeIntro').innerText = `已載入 10 筆測試資料`;
+
+            checkDataReady();
+            runDiagnosis();
+            showToast("測試範例載入", "已成功載入「重慶門市」測試資料並進行分析！", "info");
+        }
+
+        /**
+         * Core Diagnostic Execution & Column D Splitting
+         */
+        function runDiagnosis() {
+            if (!salesRawData || salesRawData.length === 0) return;
+
+            processedData = [];
+            let nonPlanogramCount = 0;
+
+            // Map Intro Rates by SKU Code
+            const introMap = {};
+            if (introRawData) {
+                introRawData.forEach(row => {
+                    const skuKey = (row['品號'] || row['商品代號'] || '').toString().trim();
+                    if (skuKey) {
+                        introMap[skuKey] = (row['檯帳導入率'] || row['導入率'] || '').toString().trim();
+                    }
+                });
+            }
+
+            salesRawData.forEach(row => {
+                if (row['門市名稱']) currentStoreName = row['門市名稱'];
+                if (row['PMA類別']) currentCategory = row['PMA類別'];
+
+                // D Column Parsing: Extract 6-digit SKU & full unbroken Product Name
+                const rawD = row['D'] || row['商品代號名稱'] || row['商品代號及名稱'] || '';
+                let sku = '';
+                let name = rawD;
+
+                const match = rawD.match(/^(\d{6})[:：](.*)$/);
+                if (match) {
+                    sku = match[1];
+                    name = match[2]; // Preserves 100% full unbroken product name
+                } else {
+                    sku = (row['品號'] || row['商品代號'] || '').toString().trim();
+                    name = (row['商品名稱'] || rawD).toString().trim();
+                }
+
+                if (!sku) return;
+
+                // Match Planogram Rate
+                let rawIntroRate = introMap[sku];
+                if (rawIntroRate === undefined) {
+                    rawIntroRate = (row['檯帳導入率'] || row['導入率'] || '').toString().trim();
+                }
+
+                // Determine Planogram Status
+                let status = 'NON_PLANOGRAM';
+                if (rawIntroRate === '100%' || rawIntroRate === '100' || rawIntroRate === '1') {
+                    status = 'INTRODUCED';
+                } else if (rawIntroRate === '0%' || rawIntroRate === '0') {
+                    status = 'UNINTRODUCED';
+                } else if (!rawIntroRate) {
+                    status = 'NON_PLANOGRAM';
+                } else {
+                    status = 'NON_PLANOGRAM';
+                }
+
+                // AUTOMATIC FILTERING: Omit '非檯帳' (blank) items
+                if (status === 'NON_PLANOGRAM') {
+                    nonPlanogramCount++;
+                    return;
+                }
+
+                const salesQty = parseInt(row['銷售數量'] || row['銷量'] || 0, 10);
+                const salesAmount = parseInt(row['銷售金額'] || row['銷額'] || 0, 10);
+                const wasteQty = parseInt(row['廢棄數量'] || row['廢棄'] || 0, 10);
+
+                // Diagnostic Rules
+                let recommendation = '維持 / 觀察';
+                let isEliminated = false;
+
+                if (status === 'UNINTRODUCED') {
+                    recommendation = '建議引進 / 補上檯帳';
+                } else if (salesQty <= 15 || (wasteQty > 10 && wasteQty >= salesQty * 0.5)) {
+                    recommendation = '淘汰 / 刪除 / 下架';
+                    isEliminated = true;
+                } else if (salesQty < 30) {
+                    recommendation = '觀察 / 減列檯帳';
+                } else {
+                    recommendation = '熱銷 / 繼續維持';
+                }
+
+                processedData.push({
+                    sku: sku,
+                    name: name,
+                    status: status,
+                    introRateStr: status === 'INTRODUCED' ? '100%' : '0%',
+                    salesQty: salesQty,
+                    salesAmount: salesAmount,
+                    wasteQty: wasteQty,
+                    recommendation: recommendation,
+                    isEliminated: isEliminated
+                });
+            });
+
+            // Update Dashboard Counters
+            document.getElementById('displayStoreName').innerText = currentStoreName;
+            document.getElementById('displayCategory').innerText = currentCategory;
+            document.getElementById('displayTotalSKU').innerText = `${processedData.length} 品項`;
+
+            const activeSKU = processedData.filter(d => d.status === 'INTRODUCED').length;
+            const unintroSKU = processedData.filter(d => d.status === 'UNINTRODUCED').length;
+            const eliminateSKU = processedData.filter(d => d.isEliminated).length;
+
+            document.getElementById('cardActiveSKU').innerText = activeSKU;
+            document.getElementById('cardUnintroSKU').innerText = unintroSKU;
+            document.getElementById('cardFilteredSKU').innerText = nonPlanogramCount;
+            document.getElementById('cardEliminateSKU').innerText = eliminateSKU;
+
+            document.getElementById('sectionDashboard').classList.remove('hidden');
+            document.getElementById('sectionTable').classList.remove('hidden');
+
+            applyFilters();
+        }
+
+        /**
+         * Apply Search Keywords & Recommendation Filters
+         */
+        function applyFilters() {
+            const searchKeyword = document.getElementById('inputSearch').value.toLowerCase().trim();
+            const recFilter = document.getElementById('selectRecFilter').value;
+
+            filteredData = processedData.filter(item => {
+                const matchSearch = item.sku.toLowerCase().includes(searchKeyword) || 
+                                    item.name.toLowerCase().includes(searchKeyword);
+
+                let matchRec = true;
+                if (recFilter === 'ELIMINATE') {
+                    matchRec = item.isEliminated;
+                } else if (recFilter === 'KEEP') {
+                    matchRec = !item.isEliminated && item.status === 'INTRODUCED';
+                } else if (recFilter === 'INTRO') {
+                    matchRec = item.status === 'UNINTRODUCED';
+                }
+
+                return matchSearch && matchRec;
+            });
+
+            // Apply Column Sort
+            filteredData.sort((a, b) => {
+                let valA = a[sortColumn];
+                let valB = b[sortColumn];
+
+                if (typeof valA === 'string') {
+                    return sortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+                } else {
+                    return sortAsc ? valA - valB : valB - valA;
+                }
+            });
+
+            renderTable();
+        }
+
+        /**
+         * Sort Column Header Handler
+         */
+        function sortTable(column) {
+            if (sortColumn === column) {
+                sortAsc = !sortAsc;
+            } else {
+                sortColumn = column;
+                sortAsc = false;
+            }
+            applyFilters();
+        }
+
+        /**
+         * Render HTML Table Body Rows
+         */
+        function renderTable() {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+
+            document.getElementById('labelResultCount').innerText = `顯示 ${filteredData.length} / ${processedData.length} 筆`;
+
+            let totalSalesQty = 0;
+            let totalSalesAmt = 0;
+            let totalWasteQty = 0;
+
+            if (filteredData.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="text-center py-12 text-gray-400">
+                            <i class="fa-regular fa-folder-open text-4xl mb-2 block"></i>
+                            無符合條件的鮮食 SKU 診斷資料
+                        </td>
+                    </tr>
+                `;
+                document.getElementById('tableTotalSummary').innerText = '無數據';
+                return;
+            }
+
+            filteredData.forEach(item => {
+                totalSalesQty += item.salesQty;
+                totalSalesAmt += item.salesAmount;
+                totalWasteQty += item.wasteQty;
+
+                const tr = document.createElement('tr');
+                
+                // MANDATORY: Red Bold styling for Elimination recommendations
+                if (item.isEliminated) {
+                    tr.className = "row-eliminated transition-colors";
+                } else {
+                    tr.className = "hover:bg-gray-50/80 transition-colors text-gray-800";
+                }
+
+                // Table Row HTML (品號 and 商品名稱 have SAME text-base font-bold size)
+                tr.innerHTML = `
+                    <td class="px-4 py-3 font-bold text-base tracking-wider font-mono">${item.sku}</td>
+                    <td class="px-4 py-3 font-bold text-base leading-snug break-words">${item.name}</td>
+                    <td class="px-4 py-3 text-center">
+                        <span class="inline-block px-2.5 py-1 text-xs rounded-full font-bold ${
+                            item.status === 'INTRODUCED' 
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
+                            : 'bg-amber-100 text-amber-800 border border-amber-200'
+                        }">
+                            ${item.introRateStr}
+                        </span>
+                    </td>
+                    <td class="px-4 py-3 text-right font-mono font-semibold">${item.salesQty.toLocaleString()}</td>
+                    <td class="px-4 py-3 text-right font-mono font-semibold text-emerald-700">$${item.salesAmount.toLocaleString()}</td>
+                    <td class="px-4 py-3 text-right font-mono font-semibold ${item.wasteQty > 5 ? 'text-red-500' : 'text-gray-500'}">${item.wasteQty.toLocaleString()}</td>
+                    <td class="px-4 py-3">
+                        <div class="flex items-center gap-1.5 font-bold ${item.isEliminated ? 'text-red-600' : ''}">
+                            ${item.isEliminated ? '<i class="fa-solid fa-triangle-exclamation text-red-500"></i>' : ''}
+                            <span>${item.recommendation}</span>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            document.getElementById('tableTotalSummary').innerText = 
+                `合計銷售量: ${totalSalesQty.toLocaleString()} 件 | 總金額: $${totalSalesAmt.toLocaleString()} | 總廢棄: ${totalWasteQty.toLocaleString()} 件`;
+        }
+
+        /**
+         * Export UTF-8 BOM CSV File with dynamic name: {StoreName}{Category}診斷表.csv
+         */
+        function exportCSV() {
+            if (filteredData.length === 0) {
+                showToast("無法匯出", "目前沒有可供匯出的診斷資料", "warning");
+                return;
+            }
+
+            const headers = ["門市名稱", "PMA類別", "品號", "商品名稱", "檯帳導入率", "銷售數量", "銷售金額", "廢棄數量", "診斷建議"];
+            let csvRows = [headers.join(",")];
+
+            filteredData.forEach(item => {
+                const row = [
+                    `"${currentStoreName}"`,
+                    `"${currentCategory}"`,
+                    `"${item.sku}"`,
+                    `"${item.name.replace(/"/g, '""')}"`,
+                    `"${item.introRateStr}"`,
+                    item.salesQty,
+                    item.salesAmount,
+                    item.wasteQty,
+                    `"${item.recommendation}"`
+                ];
+                csvRows.push(row.join(","));
+            });
+
+            const csvString = csvRows.join("\n");
+            // Prefix UTF-8 BOM (\uFEFF) to prevent garbled text in Excel
+            const blob = new Blob(["\uFEFF" + csvString], { type: "text/csv;charset=utf-8;" });
+            const fileName = `${currentStoreName}${currentCategory}診斷表.csv`;
+
+            const link = document.createElement("a");
+            if (link.download !== undefined) {
+                const url = URL.createObjectURL(blob);
+                link.setAttribute("href", url);
+                link.setAttribute("download", fileName);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+
+            showToast("匯出成功", `已下載 ${fileName}`, "success");
+        }
+
+        /**
+         * Reset Application Data
+         */
+        function resetAllData() {
+            salesRawData = null;
+            introRawData = null;
+            processedData = [];
+            filteredData = [];
+
+            document.getElementById('fileSales').value = '';
+            document.getElementById('fileIntro').value = '';
+
+            document.getElementById('badgeSales').className = "inline-block px-2.5 py-0.5 text-xs font-semibold rounded-full bg-gray-200 text-gray-600";
+            document.getElementById('badgeSales').innerText = "尚未選擇檔案";
+
+            document.getElementById('badgeIntro').className = "inline-block px-2.5 py-0.5 text-xs font-semibold rounded-full bg-gray-200 text-gray-600";
+            document.getElementById('badgeIntro').innerText = "尚未選擇檔案";
+
+            const btn = document.getElementById('btnRunDiagnosis');
+            btn.disabled = true;
+            btn.className = "w-full sm:w-auto px-8 py-3 bg-gray-300 cursor-not-allowed text-white font-bold rounded-xl shadow transition flex items-center justify-center gap-2 text-base";
+
+            document.getElementById('sectionDashboard').classList.add('hidden');
+            document.getElementById('sectionTable').classList.add('hidden');
+
+            showToast("重置完成", "已清除所有數據與診斷狀態", "info");
+        }
+    </script>
+</body>
+</html>
